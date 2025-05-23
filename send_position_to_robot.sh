@@ -1,7 +1,7 @@
 #!/bin/bash
 
 # ROS Bridge Position Publisher Script
-# This script sets up ROS Bridge between ROS1 Noetic and ROS2 Foxy
+# This script sets up ROS Bridge between ROS1 Noetic and ROS2 Humble
 # and publishes object positions to the robot
 
 set -e  # Exit on any error
@@ -16,7 +16,7 @@ NC='\033[0m' # No Color
 # Configuration variables
 GOAL_TOPIC="/goal_position"
 ROS1_SETUP="/opt/ros/noetic/setup.bash"
-ROS2_SETUP="/opt/ros/foxy/setup.bash"
+ROS2_SETUP="/opt/ros/humble/setup.bash"
 BRIDGE_WAIT_TIME=5  # Seconds to wait for bridge to start
 
 # Function to print colored output
@@ -128,14 +128,14 @@ start_ros_bridge() {
     
     if [ ! -f "$ROS2_SETUP" ]; then
         print_error "ROS2 setup file not found: $ROS2_SETUP"
-        print_error "Please check your ROS2 Foxy installation"
+        print_error "Please check your ROS2 Humble installation"
         return 1
     fi
     
     # Check if ros1_bridge package is installed in ROS2
     if ! source "$ROS2_SETUP" > /dev/null 2>&1 && ros2 pkg list | grep -q ros1_bridge; then
         print_error "ros1_bridge package not found in ROS2"
-        print_error "Please install it with: sudo apt install ros-foxy-ros1-bridge"
+        print_error "Please install it with: sudo apt install ros-humble-ros1-bridge"
         return 1
     fi
     
@@ -162,7 +162,7 @@ start_ros_bridge() {
         source ./ros1_network_setup.sh;
         source $ROS1_SETUP;
         source $ROS2_SETUP;
-        echo 'Using ros1_bridge to connect ROS1 Noetic and ROS2 Foxy...';
+        echo 'Using ros1_bridge to connect ROS1 Noetic and ROS2 Humble...';
         ros2 run ros1_bridge dynamic_bridge --bridge-all-topics;
         read -p 'Press Enter to close this terminal...'
     " &
@@ -425,19 +425,19 @@ check_requirements() {
         print_success "ROS1 Noetic found"
     fi
     
-    # Check if ROS2 Foxy is installed
+    # Check if ROS2 Humble is installed
     if [ ! -f "$ROS2_SETUP" ]; then
-        print_error "ROS2 Foxy not found at: $ROS2_SETUP"
+        print_error "ROS2 Humble not found at: $ROS2_SETUP"
         all_ok=false
     else
-        print_success "ROS2 Foxy found"
+        print_success "ROS2 Humble found"
     fi
     
     # Check if ros1_bridge is installed
     source "$ROS2_SETUP" > /dev/null 2>&1
     if ! ros2 pkg list 2>/dev/null | grep -q ros1_bridge; then
         print_error "ros1_bridge package not found"
-        print_error "Please install it with: sudo apt install ros-foxy-ros1-bridge"
+        print_error "Please install it with: sudo apt install ros-humble-ros1-bridge"
         all_ok=false
     else
         print_success "ros1_bridge package found"
@@ -485,7 +485,7 @@ show_menu() {
 # Main script
 main() {
     print_status "ROS Bridge Position Publisher Script"
-    print_status "This script helps send object positions from ROS1 Noetic to ROS2 Foxy robot"
+    print_status "This script helps send object positions from ROS1 Noetic to ROS2 Humble robot"
     
     # Check if we have command line arguments
     if [ $# -gt 0 ]; then

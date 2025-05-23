@@ -13,7 +13,7 @@ BLUE='\033[0;34m'
 NC='\033[0m' # No Color
 
 # Configuration variables
-ROS2_SETUP="/opt/ros/foxy/setup.bash"
+ROS2_SETUP="/opt/ros/humble/setup.bash"
 
 # Function to print colored output
 print_status() {
@@ -32,21 +32,22 @@ print_error() {
     echo -e "${RED}[ERROR]${NC} $1"
 }
 
-# Function to check if ros1_bridge is installed
-check_bridge() {
+# Function to check ROS2 installation
+check_ros2() {
     source "$ROS2_SETUP" > /dev/null 2>&1
-    if ros2 pkg list | grep -q ros1_bridge; then
+    if command -v ros2 &> /dev/null; then
         return 0  # Found
     else
         return 1  # Not found
     fi
 }
 
-# Function to install ros1_bridge
-install_bridge() {
-    print_status "Installing ros1_bridge package..."
+# Function to install additional ROS2 packages if needed
+install_ros2_packages() {
+    print_status "Installing required ROS2 packages..."
     sudo apt update
-    sudo apt install -y ros-foxy-ros1-bridge
+    # No need for ros1_bridge on the receiver side
+    sudo apt install -y ros-humble-geometry-msgs
 }
 
 # Function to start ROS2 receiver node
@@ -116,21 +117,20 @@ check_requirements() {
     print_status "Checking system requirements..."
     local all_ok=true
     
-    # Check if ROS2 Foxy is installed
+    # Check if ROS2 Humble is installed
     if [ ! -f "$ROS2_SETUP" ]; then
-        print_error "ROS2 Foxy not found at: $ROS2_SETUP"
+        print_error "ROS2 Humble not found at: $ROS2_SETUP"
         all_ok=false
     else
-        print_success "ROS2 Foxy found"
+        print_success "ROS2 Humble found"
     fi
     
-    # Check if ros1_bridge is installed
-    if ! check_bridge; then
-        print_warning "ros1_bridge package not found"
-        print_status "Will install it with: sudo apt install ros-foxy-ros1-bridge"
+    # Check if ros2 command is available
+    if ! check_ros2; then
+        print_warning "ROS2 commands not available. Make sure ROS2 Humble is properly installed."
         all_ok=false
     else
-        print_success "ros1_bridge package found"
+        print_success "ROS2 commands available"
     fi
     
     # Check Python dependencies
@@ -165,18 +165,20 @@ guide_setup() {
     configure_network
     
     print_status "2. Install required packages"
-    if ! check_bridge; then
-        install_bridge
+    if ! check_ros2; then
+        print_error "ROS2 installation is incomplete. Please install ROS2 Humble first."
+    else
+        install_ros2_packages
     fi
     
     if [ -f "ros2_requirements.txt" ]; then
         pip install -r ros2_requirements.txt
     fi
     
-    print_status "3. Start ROS2 side of bridge (in a separate terminal):"
+    print_status "3. Prepare ROS2 environment:"
     print_status "   a. Source network settings: source ./ros_network_setup.sh"
     print_status "   b. Source ROS2: source $ROS2_SETUP"
-    print_status "   c. Run bridge: ros2 run ros1_bridge dynamic_bridge"
+    print_status "   Note: The ROS1-ROS2 bridge will run on the other machine"
     
     print_status "4. Start position receiver (in another terminal):"
     print_status "   a. Source network settings: source ./ros_network_setup.sh"
@@ -186,22 +188,22 @@ guide_setup() {
     print_success "Setup guide complete! Please follow the steps above."
 }
 
-# Function to start bridge from ROS2 side
-start_bridge() {
-    print_status "Starting ROS1-ROS2 Bridge from ROS2 side..."
+# Function to prepare ROS2 environment
+prepare_ros2_env() {
+    print_status "Preparing ROS2 environment..."
     
     # Source ROS2
     source "$ROS2_SETUP"
     
-    # Run bridge
+    # Source network configuration if available
     if [ -f "ros_network_setup.sh" ]; then
         source ./ros_network_setup.sh
     else
         print_warning "Network settings not found. Network configuration may be required."
     fi
     
-    print_status "Running bridge..."
-    ros2 run ros1_bridge dynamic_bridge
+    print_success "ROS2 environment prepared"
+    print_status "ROS2 is ready to receive messages from ROS1 via the bridge running on the other machine"
 }
 
 # Main menu
@@ -213,7 +215,7 @@ show_menu() {
     echo "1. Check system requirements"
     echo "2. Configure network settings"
     echo "3. Install required packages"
-    echo "4. Start ROS Bridge (from ROS2 side)"
+    echo "4. Prepare ROS2 Environment"
     echo "5. Start Position Receiver"
     echo "6. Guided setup (steps 1-3)"
     echo "0. Exit"
@@ -238,8 +240,8 @@ main() {
             "install")
                 install_bridge
                 ;;
-            "bridge")
-                start_bridge
+            "prepare")
+                prepare_ros2_env
                 ;;
             "receiver")
                 start_receiver
@@ -248,7 +250,7 @@ main() {
                 guide_setup
                 ;;
             *)
-                echo "Usage: $0 {check|network|install|bridge|receiver|guide}"
+                echo "Usage: $0 {check|network|install|prepare|receiver|guide}"
                 ;;
         esac
         return
@@ -267,14 +269,15 @@ main() {
                 configure_network
                 ;;
             3)
-                if ! check_bridge; then
-                    install_bridge
-                else
-                    print_success "ros1_bridge is already installed"
+                if ! check_ros2; then
+                    print_error "ROS2 installation is incomplete. Please install ROS2 Humble first."
+                else 
+                    install_ros2_packages
+                    print_success "Required ROS2 packages installed"
                 fi
                 ;;
             4)
-                start_bridge
+                prepare_ros2_env
                 ;;
             5)
                 start_receiver
