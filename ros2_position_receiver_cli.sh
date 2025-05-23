@@ -1,8 +1,9 @@
 #!/bin/bash
 
 # ROS2 Position Receiver using CLI tools
-# This script listens for position messages on the /goal_position topic
+# This script listens for position messages on the /goal_pose topic
 # and processes them without requiring rclpy
+# Updated to handle PoseStamped messages instead of simple Point messages
 
 # Color codes for output
 RED='\033[0;31m'
@@ -13,7 +14,7 @@ NC='\033[0m' # No Color
 
 # Configuration
 ROS2_SETUP="/opt/ros/humble/setup.bash"
-TOPIC_NAME="/goal_position"
+TOPIC_NAME="/goal_pose"
 
 # Function to print colored output
 print_status() {
@@ -38,7 +39,7 @@ process_position() {
     local y=$2
     local z=$3
     
-    print_success "Received position: x=$x, y=$y, z=$z"
+    print_success "Received position from PoseStamped message: x=$x, y=$y, z=$z"
     print_status "Processing position for robot movement..."
     
     # Example: Convert position to robot-specific commands
@@ -83,18 +84,37 @@ main() {
     
     # Listen for messages using ros2 topic echo
     ros2 topic echo "$TOPIC_NAME" | while read line; do
-        # Check for new message (geometry_msgs/Point messages have x, y, z fields)
-        if [[ $line == *"x:"* ]]; then
-            # Extract x value
-            x_val=$(echo "$line" | sed 's/x: //')
-            # Read next two lines for y and z
-            read line
-            y_val=$(echo "$line" | sed 's/y: //')
-            read line
-            z_val=$(echo "$line" | sed 's/z: //')
-            
-            # Process the position
-            process_position "$x_val" "$y_val" "$z_val"
+        # Check for start of position section in the PoseStamped message
+        # The message structure is:
+        # header:
+        #   stamp: ...
+        #   frame_id: ...
+        # pose:
+        #   position:
+        #     x: ...
+        #     y: ...
+        #     z: ...
+        #   orientation:
+        #     x: ...
+        #     y: ...
+        #     z: ...
+        #     w: ...
+        
+        if [[ $line == *"position:"* ]]; then
+            # We found the position section, now read the next lines to get x, y, z
+            read line  # This should be the line with "x:"
+            if [[ $line == *"x:"* ]]; then
+                x_val=$(echo "$line" | sed 's/.*x: //')
+                
+                # Read y and z values
+                read line
+                y_val=$(echo "$line" | sed 's/.*y: //')
+                read line
+                z_val=$(echo "$line" | sed 's/.*z: //')
+                
+                # Process the position
+                process_position "$x_val" "$y_val" "$z_val"
+            fi
         fi
     done
 }
