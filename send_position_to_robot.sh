@@ -14,7 +14,7 @@ BLUE='\033[0;34m'
 NC='\033[0m' # No Color
 
 # Configuration variables
-GOAL_TOPIC="/goal_position"
+GOAL_TOPIC="/goal_pose"
 ROS1_SETUP="/opt/ros/noetic/setup.bash"
 ROS2_SETUP="/opt/ros/foxy/setup.bash"  # Note: This was updated to use Foxy instead of Humble
 BRIDGE_WAIT_TIME=5  # Seconds to wait for bridge to start
@@ -399,15 +399,32 @@ send_custom_position() {
     read z_coord
     z_coord=${z_coord:-0.0}
     
+    # Get optional frame_id
+    echo -n "Enter frame_id (default: map): "
+    read frame_id
+    frame_id=${frame_id:-map}
+    
     # Source ROS1
     source "$ROS1_SETUP" > /dev/null 2>&1
     
-    # Send a custom position using rostopic pub
-    rostopic pub "$GOAL_TOPIC" geometry_msgs/Point "x: $x_coord
-y: $y_coord
-z: $z_coord" --once
+    # Send a custom position using rostopic pub with PoseStamped format
+    rostopic pub "$GOAL_TOPIC" geometry_msgs/PoseStamped "header:
+  stamp:
+    secs: 0
+    nsecs: 0
+  frame_id: '$frame_id'
+pose:
+  position:
+    x: $x_coord
+    y: $y_coord
+    z: $z_coord
+  orientation:
+    x: 0.0
+    y: 0.0
+    z: 0.0
+    w: 1.0" --once
     
-    print_success "Custom position sent: x=$x_coord, y=$y_coord, z=$z_coord"
+    print_success "Custom position sent: x=$x_coord, y=$y_coord, z=$z_coord in frame '$frame_id'"
 }
 
 # Function to send a test position
@@ -417,12 +434,24 @@ send_test_position() {
     # Source ROS1
     source "$ROS1_SETUP" > /dev/null 2>&1
     
-    # Send a test position using rostopic pub
-    rostopic pub "$GOAL_TOPIC" geometry_msgs/Point "x: 1.0
-y: 2.0
-z: 0.5" --once
+    # Send a test position using rostopic pub with PoseStamped format
+    rostopic pub "$GOAL_TOPIC" geometry_msgs/PoseStamped "header:
+  stamp:
+    secs: 0
+    nsecs: 0
+  frame_id: 'map'
+pose:
+  position:
+    x: 1.0
+    y: 2.0
+    z: 0.5
+  orientation:
+    x: 0.0
+    y: 0.0
+    z: 0.0
+    w: 1.0" --once
     
-    print_success "Test position sent: x=1.0, y=2.0, z=0.5"
+    print_success "Test position sent: x=1.0, y=2.0, z=0.5 in frame 'map'"
 }
 
 # Function to check ROS Bridge status with more details
@@ -530,7 +559,14 @@ check_requirements() {
         print_warning "Install them with: pip install -r requirement.txt"
         all_ok=false
     else
-        print_success "Python ROS dependencies found"
+        # Check specifically for PoseStamped message type
+        if ! python3 -c "from geometry_msgs.msg import PoseStamped" 2>/dev/null; then
+            print_warning "Missing geometry_msgs PoseStamped message type"
+            print_warning "Make sure you have the right version of geometry_msgs"
+            all_ok=false
+        else
+            print_success "Python ROS dependencies found including PoseStamped"
+        fi
     fi
     
     # Overall status

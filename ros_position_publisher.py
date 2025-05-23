@@ -4,7 +4,7 @@ import rospy
 import json
 import sys
 import os
-from geometry_msgs.msg import Point
+from geometry_msgs.msg import PoseStamped, Pose, Point, Quaternion
 from std_msgs.msg import Header
 from give_the_task_efficient import ObjectLocator, Config
 
@@ -16,35 +16,45 @@ class ROSPositionPublisher:
         # Initialize ROS node
         rospy.init_node('position_publisher', anonymous=True)
         
-        # Create publisher for /goal_position topic
-        self.position_pub = rospy.Publisher('/goal_position', Point, queue_size=10)
+        # Create publisher for /goal_pose topic
+        self.position_pub = rospy.Publisher('/goal_pose', PoseStamped, queue_size=10)
         
         # Wait for publisher to be ready
         rospy.sleep(0.5)
         
         print("🤖 ROS Position Publisher initialized")
-        print(f"📡 Publishing to topic: /goal_position")
+        print(f"📡 Publishing to topic: /goal_pose")
     
-    def publish_position(self, x, y, z):
+    def publish_position(self, x, y, z, frame_id="map"):
         """
-        Publish a position to the /goal_position topic
+        Publish a position to the /goal_pose topic using PoseStamped message
         
         Args:
             x, y, z: Coordinates in the map frame
+            frame_id: The coordinate frame (default: "map")
         """
-        # Create Point message
-        point_msg = Point()
-        point_msg.x = float(x)
-        point_msg.y = float(y)
-        point_msg.z = float(z)
+        # Create PoseStamped message
+        pose_msg = PoseStamped()
+        
+        # Set header
+        pose_msg.header = Header()
+        pose_msg.header.stamp = rospy.Time.now()
+        pose_msg.header.frame_id = frame_id
+        
+        # Set position
+        pose_msg.pose = Pose()
+        pose_msg.pose.position = Point(float(x), float(y), float(z))
+        
+        # Set orientation (default to identity quaternion)
+        pose_msg.pose.orientation = Quaternion(0.0, 0.0, 0.0, 1.0)
         
         # Publish the message
-        self.position_pub.publish(point_msg)
+        self.position_pub.publish(pose_msg)
         
-        print(f"📤 Published position to /goal_position:")
-        print(f"   x: {point_msg.x}")
-        print(f"   y: {point_msg.y}")
-        print(f"   z: {point_msg.z}")
+        print(f"📤 Published position to /goal_pose:")
+        print(f"   Frame: {pose_msg.header.frame_id}")
+        print(f"   Position: x={pose_msg.pose.position.x}, y={pose_msg.pose.position.y}, z={pose_msg.pose.position.z}")
+        print(f"   Orientation: w={pose_msg.pose.orientation.w} (identity quaternion)")
         
         return True
     
@@ -128,7 +138,7 @@ def main():
         
         if success:
             print("\n🚀 Position sent to robot successfully!")
-            print("💡 The robot should receive the goal position on /goal_position topic")
+            print("💡 The robot should receive the goal position on /goal_pose topic")
         else:
             print("\n❌ Failed to send position to robot")
             
