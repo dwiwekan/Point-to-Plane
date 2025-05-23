@@ -88,7 +88,3 @@ Alternatively, you can run each tool directly from the command line:
 - For large point clouds (>1 million points), downsampling is automatically applied to improve performance
 - Multi-stage ICP provides better alignment with fewer iterations
 - Visualization is optimized for better performance and user experience
-
-## License
-
-This software is provided as-is under the MIT License.
