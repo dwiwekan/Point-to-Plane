@@ -1,7 +1,9 @@
 #!/bin/bash
 
 # Setup script for ROS2 Position Receiver
-# This script installs dependencies and sets up the ROS2 side of the bridge
+# This script installs dependencies and sets up the ROS2 receiver node
+# Note: This machine only runs the ROS2 receiver, the ROS1 bridge runs on another machine
+# This version uses a CLI-based approach that doesn't require rclpy
 
 set -e  # Exit on any error
 
@@ -45,20 +47,176 @@ check_ros2() {
 # Function to install additional ROS2 packages if needed
 install_ros2_packages() {
     print_status "Installing required ROS2 packages..."
-    sudo apt update
-    # No need for ros1_bridge on the receiver side
-    sudo apt install -y ros-humble-geometry-msgs
+    sudo apt-get update
+    
+    # Install essential ROS2 Humble packages
+    sudo apt-get install -y ros-humble-geometry-msgs
+    
+    # No need to set up Python environment for CLI-based approach
+    print_status "Using CLI-based approach (no Python dependencies required)"
+    
+    # Create CLI receiver if it doesn't exist
+    ensure_cli_receiver_exists
+}
+
+# Function to ensure CLI receiver script exists
+ensure_cli_receiver_exists() {
+    if [ -f "ros2_position_receiver_cli.sh" ]; then
+        print_status "CLI receiver script already exists"
+        chmod +x ros2_position_receiver_cli.sh
+        return 0
+    fi
+    
+    print_status "Creating CLI-based position receiver script..."
+    
+    cat > ros2_position_receiver_cli.sh << 'EOF'
+#!/bin/bash
+
+# ROS2 Position Receiver using CLI tools
+# This script listens for position messages on the /goal_position topic
+# and processes them without requiring rclpy
+
+# Color codes for output
+RED='\033[0;31m'
+GREEN='\033[0;32m'
+YELLOW='\033[1;33m'
+BLUE='\033[0;34m'
+NC='\033[0m' # No Color
+
+# Configuration
+ROS2_SETUP="/opt/ros/humble/setup.bash"
+TOPIC_NAME="/goal_position"
+
+# Function to print colored output
+print_status() {
+    echo -e "${BLUE}[INFO]${NC} $1"
+}
+
+print_success() {
+    echo -e "${GREEN}[SUCCESS]${NC} $1"
+}
+
+print_warning() {
+    echo -e "${YELLOW}[WARNING]${NC} $1"
+}
+
+print_error() {
+    echo -e "${RED}[ERROR]${NC} $1"
+}
+
+# Function to process a position message
+process_position() {
+    local x=$1
+    local y=$2
+    local z=$3
+    
+    print_success "Received position: x=$x, y=$y, z=$z"
+    print_status "Processing position for robot movement..."
+    
+    # Example: Convert position to robot-specific commands
+    # You would implement your robot control logic here
+    
+    # For demonstration, we'll just log that we're sending it to the robot
+    print_status "Position sent to robot controller"
+}
+
+# Main function
+main() {
+    print_status "Starting ROS2 Position Receiver (CLI Version)"
+    
+    # Source ROS2 setup
+    if [ ! -f "$ROS2_SETUP" ]; then
+        print_error "ROS2 setup file not found at: $ROS2_SETUP"
+        print_error "Please check your ROS2 installation"
+        exit 1
+    fi
+    
+    # Source ROS2
+    print_status "Sourcing ROS2 setup..."
+    source "$ROS2_SETUP"
+    
+    # Source network configuration if available
+    if [ -f "ros_network_setup.sh" ]; then
+        print_status "Sourcing network configuration..."
+        source ./ros_network_setup.sh
+    else
+        print_warning "Network configuration not found!"
+        print_warning "The script might still work on local machine"
+    fi
+    
+    # Check if ros2 command is available
+    if ! command -v ros2 &> /dev/null; then
+        print_error "ros2 command not found. Make sure ROS2 is properly installed."
+        exit 1
+    fi
+    
+    print_status "Waiting for positions on $TOPIC_NAME topic..."
+    print_status "Press Ctrl+C to exit"
+    
+    # Listen for messages using ros2 topic echo
+    ros2 topic echo "$TOPIC_NAME" | while read line; do
+        # Check for new message (geometry_msgs/Point messages have x, y, z fields)
+        if [[ $line == *"x:"* ]]; then
+            # Extract x value
+            x_val=$(echo "$line" | sed 's/x: //')
+            # Read next two lines for y and z
+            read line
+            y_val=$(echo "$line" | sed 's/y: //')
+            read line
+            z_val=$(echo "$line" | sed 's/z: //')
+            
+            # Process the position
+            process_position "$x_val" "$y_val" "$z_val"
+        fi
+    done
+}
+
+# Run the main function
+main "$@"
+EOF
+    
+    chmod +x ros2_position_receiver_cli.sh
+    print_success "CLI receiver script created: ros2_position_receiver_cli.sh"
 }
 
 # Function to start ROS2 receiver node
 start_receiver() {
     print_status "Starting ROS2 position receiver node..."
     
-    # Check if the script exists
+    # First check if the CLI version exists
+    if [ -f "ros2_position_receiver_cli.sh" ]; then
+        print_status "Using CLI-based receiver (no rclpy needed)"
+        
+        # Make sure it's executable
+        chmod +x ros2_position_receiver_cli.sh
+        
+        # Source ROS2
+        source "$ROS2_SETUP"
+        
+        # Source network configuration if available
+        if [ -f "ros_network_setup.sh" ]; then
+            print_status "Sourcing network configuration..."
+            source ./ros_network_setup.sh
+        else
+            print_warning "Network configuration not found! Creating default configuration..."
+            configure_network
+            source ./ros_network_setup.sh
+        fi
+        
+        # Run the CLI receiver
+        print_status "Starting ROS2 CLI receiver..."
+        ./ros2_position_receiver_cli.sh
+        return
+    fi
+    
+    # Fallback to Python version if CLI version not found
+    print_status "Checking for Python-based receiver..."
     if [ ! -f "ros2_position_receiver.py" ]; then
-        print_error "ros2_position_receiver.py not found!"
+        print_error "Neither ros2_position_receiver_cli.sh nor ros2_position_receiver.py found!"
         return 1
     fi
+    
+    print_warning "Using Python-based receiver (requires rclpy)"
     
     # Make sure it's executable
     chmod +x ros2_position_receiver.py
@@ -66,7 +224,38 @@ start_receiver() {
     # Source ROS2
     source "$ROS2_SETUP"
     
+    # Source network configuration if available
+    if [ -f "ros_network_setup.sh" ]; then
+        print_status "Sourcing network configuration..."
+        source ./ros_network_setup.sh
+    else
+        print_warning "Network configuration not found! Creating default configuration..."
+        configure_network
+        source ./ros_network_setup.sh
+    fi
+    
+    # Source Python setup if available
+    if [ -f "ros2_python_setup.sh" ]; then
+        print_status "Sourcing Python path configuration..."
+        source ./ros2_python_setup.sh
+    fi
+    
+    # Check for Python ROS2 dependencies
+    if ! python3 -c "import rclpy, geometry_msgs" &>/dev/null; then
+        print_warning "Python ROS2 modules not found. Setting up ROS2 Python environment..."
+        setup_ros2_python
+        
+        # Check again after setup
+        if ! python3 -c "import rclpy, geometry_msgs" &>/dev/null; then
+            print_error "Still unable to import ROS2 Python modules."
+            print_error "Please install ROS2 Humble with Python support manually:"
+            print_error "sudo apt install ros-humble-desktop"
+            return 1
+        fi
+    fi
+    
     # Run the receiver
+    print_status "Starting ROS2 receiver node..."
     python3 ros2_position_receiver.py
 }
 
@@ -133,19 +322,31 @@ check_requirements() {
         print_success "ROS2 commands available"
     fi
     
-    # Check Python dependencies
-    print_status "Checking Python dependencies..."
-    if ! python3 -c "import rclpy, geometry_msgs" 2>/dev/null; then
-        print_warning "Missing Python ROS2 dependencies"
-        print_warning "Will install them with: pip install -r ros2_requirements.txt"
+    # Check if geometry_msgs is installed
+    source "$ROS2_SETUP" > /dev/null 2>&1
+    if ! ros2 interface list | grep -q "geometry_msgs/msg/Point"; then
+        print_warning "ROS2 geometry_msgs not found."
+        print_status "Installing ROS2 geometry_msgs package..."
+        sudo apt-get update
+        sudo apt-get install -y ros-humble-geometry-msgs
         
-        # Create ROS2 requirements file
-        echo "rclpy
-geometry_msgs" > ros2_requirements.txt
-        
-        all_ok=false
+        # Verify installation
+        if ! ros2 interface list | grep -q "geometry_msgs/msg/Point"; then
+            print_error "Failed to install geometry_msgs"
+            all_ok=false
+        else
+            print_success "Successfully installed geometry_msgs"
+        fi
     else
-        print_success "Python ROS2 dependencies found"
+        print_success "ROS2 geometry_msgs found"
+    fi
+    
+    # Check if CLI receiver script exists
+    if [ ! -f "ros2_position_receiver_cli.sh" ]; then
+        print_status "Creating CLI receiver script..."
+        ensure_cli_receiver_exists
+    else 
+        print_success "CLI receiver script found"
     fi
     
     # Overall status
@@ -171,10 +372,6 @@ guide_setup() {
         install_ros2_packages
     fi
     
-    if [ -f "ros2_requirements.txt" ]; then
-        pip install -r ros2_requirements.txt
-    fi
-    
     print_status "3. Prepare ROS2 environment:"
     print_status "   a. Source network settings: source ./ros_network_setup.sh"
     print_status "   b. Source ROS2: source $ROS2_SETUP"
@@ -183,7 +380,7 @@ guide_setup() {
     print_status "4. Start position receiver (in another terminal):"
     print_status "   a. Source network settings: source ./ros_network_setup.sh"
     print_status "   b. Source ROS2: source $ROS2_SETUP"
-    print_status "   c. Run receiver: python3 ros2_position_receiver.py"
+    print_status "   c. Run receiver: ./ros2_position_receiver_cli.sh"
     
     print_success "Setup guide complete! Please follow the steps above."
 }
@@ -238,7 +435,7 @@ main() {
                 configure_network
                 ;;
             "install")
-                install_bridge
+                install_ros2_packages
                 ;;
             "prepare")
                 prepare_ros2_env
