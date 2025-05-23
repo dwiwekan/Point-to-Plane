@@ -1,7 +1,7 @@
 #!/bin/bash
 
 # ROS Bridge Position Publisher Script
-# This script sets up ROS Bridge between ROS1 Noetic and ROS2 Humble
+# This script sets up ROS Bridge between ROS1 Noetic and ROS2 Foxy
 # and publishes object positions to the robot
 
 set -e  # Exit on any error
@@ -16,8 +16,12 @@ NC='\033[0m' # No Color
 # Configuration variables
 GOAL_TOPIC="/goal_position"
 ROS1_SETUP="/opt/ros/noetic/setup.bash"
-ROS2_SETUP="/opt/ros/humble/setup.bash"
+ROS2_SETUP="/opt/ros/foxy/setup.bash"  # Note: This was updated to use Foxy instead of Humble
 BRIDGE_WAIT_TIME=5  # Seconds to wait for bridge to start
+
+# Python environment variables
+PYTHON_ENV_PATH=""  # Will be set dynamically if needed
+USE_CONDA=false     # Set to true if using conda environments
 
 # Function to print colored output
 print_status() {
@@ -128,7 +132,7 @@ start_ros_bridge() {
     
     if [ ! -f "$ROS2_SETUP" ]; then
         print_error "ROS2 setup file not found: $ROS2_SETUP"
-        print_error "Please check your ROS2 Humble installation"
+        print_error "Please check your ROS2 Foxy installation"
         return 1
     fi
     
@@ -162,7 +166,7 @@ start_ros_bridge() {
         source ./ros1_network_setup.sh;
         source $ROS1_SETUP;
         source $ROS2_SETUP;
-        echo 'Using ros1_bridge to connect ROS1 Noetic and ROS2 Humble...';
+        echo 'Using ros1_bridge to connect ROS1 Noetic and ROS2 Foxy...';
         ros2 run ros1_bridge dynamic_bridge --bridge-all-topics;
         read -p 'Press Enter to close this terminal...'
     " &
@@ -206,6 +210,62 @@ verify_bridge_topics() {
     echo "$ros1_topics" | sed 's/^/  /'
     
     return 0
+}
+
+# Function to detect Python environment with torch
+detect_python_env() {
+    print_status "Detecting Python environment with torch..."
+    
+    # First try: check if torch is available in current environment
+    if python3 -c "import torch" &>/dev/null; then
+        print_success "torch is available in current Python environment"
+        return 0
+    fi
+    
+    # Second try: Check for virtual environments in the project directory
+    if [ -d "venv" ] && [ -f "venv/bin/activate" ]; then
+        print_status "Found venv in project directory, using it"
+        PYTHON_ENV_PATH="./venv/bin/activate"
+        return 0
+    fi
+    
+    # Third try: Check for conda environments
+    if command -v conda &>/dev/null; then
+        print_status "Conda detected, checking environments..."
+        USE_CONDA=true
+        
+        # List all conda environments with torch
+        conda_env=$(conda env list | grep -v "^#" | awk '{print $1}')
+        
+        for env in $conda_env; do
+            if conda run -n $env python -c "import torch" &>/dev/null; then
+                print_success "Found torch in conda environment: $env"
+                PYTHON_ENV_PATH="$env"
+                return 0
+            fi
+        done
+    fi
+    
+    # Fourth try: Check if pip can install torch
+    print_warning "Could not find torch in any Python environment"
+    print_warning "Would you like to install torch in the current environment? (y/n)"
+    read install_choice
+    
+    if [[ "$install_choice" == "y" || "$install_choice" == "Y" ]]; then
+        print_status "Installing torch using pip..."
+        pip install torch
+        
+        # Verify installation
+        if python3 -c "import torch" &>/dev/null; then
+            print_success "torch successfully installed"
+            return 0
+        else
+            print_error "Failed to install torch"
+            return 1
+        fi
+    fi
+    
+    return 1
 }
 
 # Function to publish position using the Python script
@@ -263,9 +323,29 @@ publish_position() {
     # Source ROS1 for Python script
     source "$ROS1_SETUP" > /dev/null 2>&1
     
-    # Run the position publisher
+    # Detect Python environment with torch if needed
+    if ! python3 -c "import torch" &>/dev/null; then
+        print_warning "torch module not found in current Python environment"
+        if ! detect_python_env; then
+            print_error "Could not find or setup a Python environment with torch"
+            print_error "Please activate your environment with torch manually before running this script"
+            return 1
+        fi
+    fi
+    
+    # Run the position publisher with appropriate environment
     print_status "Running position publisher for query: '$query'"
-    python3 ros_position_publisher.py "$query"
+    
+    if [ -z "$PYTHON_ENV_PATH" ]; then
+        # Using current environment
+        python3 ros_position_publisher.py "$query"
+    elif [ "$USE_CONDA" = true ]; then
+        # Using conda environment
+        conda run -n "$PYTHON_ENV_PATH" python3 ros_position_publisher.py "$query"
+    else
+        # Using virtual environment
+        (source "$PYTHON_ENV_PATH" && python3 ros_position_publisher.py "$query")
+    fi
     
     local status=$?
     if [ $status -eq 0 ]; then
@@ -425,12 +505,12 @@ check_requirements() {
         print_success "ROS1 Noetic found"
     fi
     
-    # Check if ROS2 Humble is installed
+    # Check if ROS2 Foxy is installed
     if [ ! -f "$ROS2_SETUP" ]; then
-        print_error "ROS2 Humble not found at: $ROS2_SETUP"
+        print_error "ROS2 Foxy not found at: $ROS2_SETUP"
         all_ok=false
     else
-        print_success "ROS2 Humble found"
+        print_success "ROS2 Foxy found"
     fi
     
     # Check if ros1_bridge is installed
@@ -476,7 +556,8 @@ show_menu() {
     echo "6. Monitor $GOAL_TOPIC topic"
     echo "7. Check ROS Bridge status"
     echo "8. Check system requirements"
-    echo "9. Stop ROS Bridge"
+    echo "9. Setup Python environment"
+    echo "10. Stop ROS Bridge"
     echo "0. Exit"
     echo "=========================================="
     echo -n "Enter your choice: "
@@ -485,7 +566,7 @@ show_menu() {
 # Main script
 main() {
     print_status "ROS Bridge Position Publisher Script"
-    print_status "This script helps send object positions from ROS1 Noetic to ROS2 Humble robot"
+    print_status "This script helps send object positions from ROS1 Noetic to ROS2 Foxy robot"
     
     # Check if we have command line arguments
     if [ $# -gt 0 ]; then
@@ -523,11 +604,15 @@ main() {
             "stop")
                 stop_ros_bridge
                 ;;
+            "env-setup")
+                detect_python_env
+                ;;
             *)
-                echo "Usage: $0 {network|start-bridge|publish <query>|monitor|test|custom|status|check|stop}"
+                echo "Usage: $0 {network|start-bridge|publish <query>|monitor|test|custom|status|check|env-setup|stop}"
                 echo "Examples:"
                 echo "  $0 publish chair       # Find a chair and send its position"
                 echo "  $0 start-bridge        # Start the ROS Bridge"
+                echo "  $0 env-setup           # Setup Python environment"
                 echo "  $0 test                # Send a test position"
                 echo "  $0 monitor             # Monitor the goal position topic"
                 echo "  $0 custom              # Send custom coordinates"
@@ -573,6 +658,9 @@ main() {
                 check_requirements
                 ;;
             9)
+                detect_python_env
+                ;;
+            10)
                 stop_ros_bridge
                 ;;
             0)
