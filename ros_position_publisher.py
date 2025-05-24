@@ -58,27 +58,60 @@ class ROSPositionPublisher:
         
         return True
     
-    def find_and_publish_object(self, query):
+    def find_and_publish_object(self, query, visualize=True):
         """
-        Find the best matching object and publish its position
+        Find the best matching object, publish its position, and optionally visualize it
         
         Args:
             query: Text query to search for
+            visualize: Whether to visualize the object in 3D (default: True)
         """
         print(f"\n🔍 Searching for object: '{query}'")
         
         # Create config for object locator
         config = Config()
         
+        # Set visualization mode for best match
+        config.visualization_mode = "best"
+        
         # Check file paths and update if needed
         if not os.path.exists(config.dsg_path):
+            print(f"⚠️ DSG path not found at: {config.dsg_path}")
+            # Try data/ folder (lowercase)
             if os.path.exists("data/dsg_with_mesh.json"):
                 config.dsg_path = "data/dsg_with_mesh.json"
+                print(f"✅ Found DSG at: {config.dsg_path}")
             elif os.path.exists("data/dsg.json"):
                 config.dsg_path = "data/dsg.json"
+                print(f"✅ Found DSG at: {config.dsg_path}")
+            # Try Data/ folder (uppercase)
+            elif os.path.exists("Data/dsg_with_mesh.json"):
+                config.dsg_path = "Data/dsg_with_mesh.json"
+                print(f"✅ Found DSG at: {config.dsg_path}")
+            elif os.path.exists("Data/dsg.json"):
+                config.dsg_path = "Data/dsg.json"
+                print(f"✅ Found DSG at: {config.dsg_path}")
             else:
                 print(f"❌ DSG file not found!")
                 return False
+        
+        # Check mesh path and update if needed
+        if not os.path.exists(config.mesh_path):
+            print(f"⚠️ Mesh path not found at: {config.mesh_path}")
+            # Try data/ folder (lowercase)
+            if os.path.exists("data/cloud_aligned_new.ply"):
+                config.mesh_path = "data/cloud_aligned_new.ply"
+                print(f"✅ Found mesh at: {config.mesh_path}")
+            elif os.path.exists("data/cloud_aligned.ply"):
+                config.mesh_path = "data/cloud_aligned.ply"
+                print(f"✅ Found mesh at: {config.mesh_path}")
+            # Try Data/ folder (uppercase)
+            elif os.path.exists("Data/cloud_aligned_new.ply"):
+                config.mesh_path = "Data/cloud_aligned_new.ply"
+                print(f"✅ Found mesh at: {config.mesh_path}")
+            elif os.path.exists("Data/cloud_aligned.ply"):
+                config.mesh_path = "Data/cloud_aligned.ply"
+                print(f"✅ Found mesh at: {config.mesh_path}")
         
         # Initialize object locator
         locator = ObjectLocator(config)
@@ -115,6 +148,12 @@ class ROSPositionPublisher:
         if success:
             print(f"✅ Successfully sent position to robot via ROS!")
         
+        # Visualize the best match if requested
+        if visualize:
+            print("\n🌟 Starting visualization of best match...")
+            # Use the visualize_best_match method to show the object in 3D
+            locator.visualize_best_match()
+        
         return success
 
 def main():
@@ -124,17 +163,33 @@ def main():
         publisher = ROSPositionPublisher()
         
         # Get query from command line arguments or prompt
+        visualize = True  # Default to visualize
+        query = ""
+        
+        # Parse command line arguments
         if len(sys.argv) > 1:
-            query = " ".join(sys.argv[1:])
-        else:
+            # Check for --no-viz flag
+            if "--no-viz" in sys.argv:
+                visualize = False
+                # Remove the flag from arguments
+                sys.argv.remove("--no-viz")
+            
+            # The rest is the query
+            if len(sys.argv) > 1:
+                query = " ".join(sys.argv[1:])
+        
+        # If no query provided via command line, prompt user
+        if not query:
             query = input("🔍 Enter search query for object: ")
+            viz_choice = input("🖼️ Visualize object? (Y/n): ").lower()
+            visualize = viz_choice != "n"
         
         if not query.strip():
             print("❌ No query provided")
             return
         
-        # Find object and publish position
-        success = publisher.find_and_publish_object(query.strip())
+        # Find object, publish position, and visualize if requested
+        success = publisher.find_and_publish_object(query.strip(), visualize)
         
         if success:
             print("\n🚀 Position sent to robot successfully!")

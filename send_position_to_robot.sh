@@ -271,6 +271,7 @@ detect_python_env() {
 # Function to publish position using the Python script
 publish_position() {
     local query="$1"
+    local visualize="$2"
     
     print_status "Publishing position for query: '$query'"
     
@@ -336,16 +337,31 @@ publish_position() {
     # Run the position publisher with appropriate environment
     print_status "Running position publisher for query: '$query'"
     
+    # Determine visualization flag
+    local viz_flag=""
+    if [ "$visualize" = "false" ]; then
+        viz_flag="--no-viz"
+        print_status "Skipping visualization to save time"
+    else
+        print_status "Visualization enabled - will load mesh and display result"
+    fi
+    
+    start_time=$(date +%s.%N)
+    
     if [ -z "$PYTHON_ENV_PATH" ]; then
         # Using current environment
-        python3 ros_position_publisher.py "$query"
+        python3 ros_position_publisher.py $viz_flag "$query"
     elif [ "$USE_CONDA" = true ]; then
         # Using conda environment
-        conda run -n "$PYTHON_ENV_PATH" python3 ros_position_publisher.py "$query"
+        conda run -n "$PYTHON_ENV_PATH" python3 ros_position_publisher.py $viz_flag "$query"
     else
         # Using virtual environment
-        (source "$PYTHON_ENV_PATH" && python3 ros_position_publisher.py "$query")
+        (source "$PYTHON_ENV_PATH" && python3 ros_position_publisher.py $viz_flag "$query")
     fi
+    
+    end_time=$(date +%s.%N)
+    elapsed=$(echo "$end_time - $start_time" | bc)
+    print_status "Total processing time: ${elapsed:.2f} seconds"
     
     local status=$?
     if [ $status -eq 0 ]; then
@@ -614,12 +630,32 @@ main() {
                 start_ros_bridge
                 ;;
             "publish")
+                local visualize=false  # Default to NO visualization to save time
+                local query=""
+                
+                # Check for visualization flags
+                if [[ "$*" == *"--visualize"* ]]; then
+                    visualize=true
+                    # Remove --visualize from arguments before extracting query
+                    set -- "${@/--visualize/}"
+                fi
+                
+                if [[ "$*" == *"--no-viz"* ]]; then
+                    visualize=false
+                    # Remove --no-viz from arguments before extracting query
+                    set -- "${@/--no-viz/}"
+                fi
+                
                 if [ $# -ge 2 ]; then
-                    query="${@:2}"  # Get all arguments from 2nd onward
-                    publish_position "$query"
+                    # Get all arguments from 2nd onward as the query
+                    shift
+                    query="$*"
+                    publish_position "$query" "$visualize"
                 else
                     print_error "Please provide a search query"
-                    echo "Usage: $0 publish <search_query>"
+                    echo "Usage: $0 publish [--visualize | --no-viz] <search_query>"
+                    echo "  --visualize   Enable 3D visualization (loads mesh, may take longer)"
+                    echo "  --no-viz      Disable visualization (faster, default)"
                 fi
                 ;;
             "monitor")
@@ -644,14 +680,16 @@ main() {
                 detect_python_env
                 ;;
             *)
-                echo "Usage: $0 {network|start-bridge|publish <query>|monitor|test|custom|status|check|env-setup|stop}"
+                echo "Usage: $0 {network|start-bridge|publish [--visualize|--no-viz] <query>|monitor|test|custom|status|check|env-setup|stop}"
                 echo "Examples:"
-                echo "  $0 publish chair       # Find a chair and send its position"
-                echo "  $0 start-bridge        # Start the ROS Bridge"
-                echo "  $0 env-setup           # Setup Python environment"
-                echo "  $0 test                # Send a test position"
-                echo "  $0 monitor             # Monitor the goal position topic"
-                echo "  $0 custom              # Send custom coordinates"
+                echo "  $0 publish chair                 # Find a chair and send position (no visualization)"
+                echo "  $0 publish --visualize chair     # Find a chair, send position and visualize in 3D"
+                echo "  $0 publish --no-viz chair        # Find a chair and send position without visualization"
+                echo "  $0 start-bridge                  # Start the ROS Bridge"
+                echo "  $0 env-setup                     # Setup Python environment"
+                echo "  $0 test                          # Send a test position"
+                echo "  $0 monitor                       # Monitor the goal position topic"
+                echo "  $0 custom                        # Send custom coordinates"
                 ;;
         esac
         return
@@ -672,8 +710,16 @@ main() {
             3)
                 echo -n "Enter search query for object: "
                 read query
+                
                 if [ -n "$query" ]; then
-                    publish_position "$query"
+                    echo -n "Show visualization? (y/N): "
+                    read viz_choice
+                    
+                    if [[ "$viz_choice" == "y" || "$viz_choice" == "Y" ]]; then
+                        publish_position "$query" "true"
+                    else
+                        publish_position "$query" "false"
+                    fi
                 else
                     print_error "No query provided"
                 fi
