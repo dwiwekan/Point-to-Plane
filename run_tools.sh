@@ -44,14 +44,14 @@ case $choice in
         echo -e "\n${BLUE}==== Running Point-to-Plane ICP Alignment ====${NC}"
         
         # Ask for source and target files
-        read -p "Enter source point cloud file path [default: data/cloud_aligned.ply]: " source_file
-        source_file=${source_file:-"data/cloud_aligned.ply"}
+        read -p "Enter source point cloud file path [default: realsense/nuri.ply]: " source_file
+        source_file=${source_file:-"realsense/nuri.ply"}
         
         read -p "Enter target point cloud file path [default: data/mesh.ply]: " target_file
         target_file=${target_file:-"data/mesh.ply"}
         
-        read -p "Enter output aligned file path [default: data/cloud_aligned_new.ply]: " output_file
-        output_file=${output_file:-"data/cloud_aligned_new.ply"}
+        read -p "Enter output aligned file path [default: realsense/nuri_new.ply]: " output_file
+        output_file=${output_file:-"realsense/nuri_new.ply"}
         
         # Check if files exist
         check_file "$source_file" && check_file "$target_file" || exit 1
@@ -113,8 +113,8 @@ case $choice in
         read -p "Enter DSG JSON file path [default: data/dsg_with_mesh.json]: " dsg_path
         dsg_path=${dsg_path:-"data/dsg_with_mesh.json"}
         
-        read -p "Enter mesh/point cloud file path [default: data/cloud_aligned_new.ply]: " mesh_path
-        mesh_path=${mesh_path:-"data/cloud_aligned_new.ply"}
+        read -p "Enter mesh/point cloud file path [default: realsense/nuri_new.ply]: " mesh_path
+        mesh_path=${mesh_path:-"realsense/nuri_new.ply"}
         
         # Check if files exist
         check_file "$dsg_path" && check_file "$mesh_path" || exit 1
@@ -136,11 +136,18 @@ case $choice in
         read -p "Choose visualization mode [1-4, default: 1]: " vis_mode
         
         case $vis_mode in
-            1) mode="best" ;;
+            1) 
+                mode="best"
+                read -p "Enter match index to visualize (0 for best match, default: 0): " match_index
+                match_index=${match_index:-0}
+                ;;
             2) mode="multiple" ;;
             3) mode="both" ;;
             4) mode="advanced" ;;
-            *) mode="best" ;;
+            *) 
+                mode="best"
+                match_index=0
+                ;;
         esac
         
         # Ask for similarity threshold
@@ -149,7 +156,11 @@ case $choice in
         
         # Run the object locator
         echo -e "\n${YELLOW}Searching for objects matching '$query'...${NC}"
-        $PYTHON give_the_task_efficient.py --query "$query" --dsg "$dsg_path" --mesh "$mesh_path" --mode "$mode" --threshold "$threshold"
+        if [ "$mode" = "best" ]; then
+            $PYTHON give_the_task_efficient.py --query "$query" --dsg "$dsg_path" --mesh "$mesh_path" --mode "$mode" --threshold "$threshold" --match-index "$match_index"
+        else
+            $PYTHON give_the_task_efficient.py --query "$query" --dsg "$dsg_path" --mesh "$mesh_path" --mode "$mode" --threshold "$threshold"
+        fi
         
         echo -e "\n${GREEN}Object search complete!${NC}"
         ;;

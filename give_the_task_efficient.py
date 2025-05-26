@@ -285,37 +285,46 @@ class ObjectLocator:
             print(f"  Check the file path: {self.config.mesh_path}")
             return None
     
-    def visualize_best_match(self) -> None:
+    def visualize_best_match(self, match_index: int = 0) -> None:
         """
-        Visualize the best matching object in the 3D scene
+        Visualize a specific matching object in the 3D scene
+        
+        Args:
+            match_index: Index of the match to visualize (default: 0 for best match)
         """
         if not self.all_matches:
             print("❌ No matching objects found.")
             return
+        
+        # Verify that the match index is valid
+        if match_index < 0 or match_index >= len(self.all_matches):
+            print(f"❌ Invalid match index: {match_index}. Using best match (index 0).")
+            match_index = 0
         
         # Load mesh for visualization
         geometry = self.load_mesh()
         if geometry is None:
             return
         
-        # Get the best match
-        best_match = self.all_matches[0]
-        print(f"\n✅ Highest similarity object:")
+        # Get the selected match
+        selected_match = self.all_matches[match_index]
+        match_ordinal = "best" if match_index == 0 else f"{match_index+1}{'st' if match_index == 0 else 'nd' if match_index == 1 else 'rd' if match_index == 2 else 'th'}"
+        print(f"\n✅ {match_ordinal.capitalize()} match object:")
         print(f" - Query: '{self.query}'")
-        print(f" - Node ID: {best_match['node_id']}")
-        print(f" - Type: {best_match['type']}")
-        print(f" - 3D Position: {best_match['position']}")
-        print(f" - Similarity: {best_match['similarity']:.4f}")
+        print(f" - Node ID: {selected_match['node_id']}")
+        print(f" - Type: {selected_match['type']}")
+        print(f" - 3D Position: {selected_match['position']}")
+        print(f" - Similarity: {selected_match['similarity']:.4f}")
         
         # Get position with offsets
-        pos = best_match['position']
+        pos = selected_match['position']
         adjusted_pos = [
             pos[0] + self.config.sphere_offset[0],
             pos[1] + self.config.sphere_offset[1],
             pos[2] + self.config.sphere_offset[2]
         ]
         
-        # Create sphere to highlight the best match
+        # Create sphere to highlight the selected match
         sphere = o3d.geometry.TriangleMesh.create_sphere(radius=0.2)
         sphere.paint_uniform_color([1, 0, 0])  # Red
         sphere.compute_vertex_normals()
@@ -340,14 +349,15 @@ class ObjectLocator:
             geometries.append(line_set)
         
         # Visualization
-        print("\n🌟 Starting 3D visualization (best match object)...")
+        print("\n🌟 Starting 3D visualization (selected match object)...")
         print(f"📌 Original position: {pos}")
         print(f"📌 Adjusted position: {adjusted_pos}")
         
         # Use simple draw_geometries function as in original code
+        match_label = "Best Match" if match_index == 0 else f"Match #{match_index+1}"
         o3d.visualization.draw_geometries(
             geometries,
-            window_name=f"Best Match: {self.query}",
+            window_name=f"{match_label}: {self.query}",
             width=1024, 
             height=768
         )
@@ -562,18 +572,21 @@ class ObjectLocator:
         
         print("✅ Visualization complete")
     
-    def visualize_results(self) -> None:
+    def visualize_results(self, match_index: int = 0) -> None:
         """
         Visualize search results based on the configured visualization mode
+        
+        Args:
+            match_index: Index of the match to visualize when using 'best' mode (default: 0)
         """
         visualization_start = time.time()
         
         if self.config.visualization_mode == "multiple":
             self.visualize_multiple_matches()
         elif self.config.visualization_mode == "best":
-            self.visualize_best_match()
+            self.visualize_best_match(match_index)
         elif self.config.visualization_mode == "both":
-            self.visualize_best_match()
+            self.visualize_best_match(match_index)
             self.visualize_multiple_matches()
         elif self.config.visualization_mode == "advanced":
             # Filter matches based on threshold
@@ -589,17 +602,41 @@ class ObjectLocator:
             # Interactive selection
             print("\n🔍 Select visualization mode:")
             print(" 1. View multiple objects (above similarity threshold)")
-            print(" 2. View only the best match")
-            print(" 3. View both best match and multiple objects")
+            print(" 2. View only a specific match")
+            print(" 3. View both specific match and multiple objects")
             print(" 4. Advanced visualization with wireframe boxes")
             choice = input("Choice (1-4): ")
             
             if choice == "1":
                 self.visualize_multiple_matches()
             elif choice == "2":
-                self.visualize_best_match()
+                if len(self.all_matches) > 1:
+                    print(f"\nFound {len(self.all_matches)} matches:")
+                    for i, match in enumerate(self.all_matches[:10]):  # Show top 10 matches
+                        print(f" {i}. {match['type']} (similarity: {match['similarity']:.4f})")
+                    
+                    match_idx_input = input(f"Enter match index to visualize (0-{len(self.all_matches)-1}, default: {match_index}): ")
+                    try:
+                        match_idx = int(match_idx_input)
+                        self.visualize_best_match(match_idx)
+                    except ValueError:
+                        self.visualize_best_match(match_index)  # Use provided default if invalid input
+                else:
+                    self.visualize_best_match(match_index)
             elif choice == "3":
-                self.visualize_best_match()
+                if len(self.all_matches) > 1:
+                    print(f"\nFound {len(self.all_matches)} matches:")
+                    for i, match in enumerate(self.all_matches[:10]):  # Show top 10 matches
+                        print(f" {i}. {match['type']} (similarity: {match['similarity']:.4f})")
+                    
+                    match_idx_input = input(f"Enter match index to visualize (0-{len(self.all_matches)-1}, default: {match_index}): ")
+                    try:
+                        match_idx = int(match_idx_input)
+                        self.visualize_best_match(match_idx)
+                    except ValueError:
+                        self.visualize_best_match(match_index)  # Use provided default if invalid input
+                else:
+                    self.visualize_best_match(match_index)
                 self.visualize_multiple_matches()
             elif choice == "4":
                 filtered_matches = [match for match in self.all_matches 
@@ -616,12 +653,13 @@ class ObjectLocator:
         
         print(f"✅ Visualization completed in {time.time() - visualization_start:.2f} seconds")
     
-    def run(self, query: str) -> None:
+    def run(self, query: str, match_index: int = 0) -> None:
         """
         Run the complete object location process with the given query
         
         Args:
             query: Text query to search for
+            match_index: Index of the match to visualize when using 'best' mode (default: 0)
         """
         self.set_query(query)
         
@@ -629,7 +667,7 @@ class ObjectLocator:
             return
         
         self.find_matching_objects()
-        self.visualize_results()
+        self.visualize_results(match_index)
         
         total_time = time.time() - self.start_time
         print(f"\n✅ Total execution time: {total_time:.2f} seconds")
@@ -655,6 +693,7 @@ def main():
     parser.add_argument("--threshold", type=float, help="Similarity threshold (0.0-1.0)")
     parser.add_argument("--max-objects", type=int, help="Maximum number of objects to display")
     parser.add_argument("--show-lines", action="store_true", help="Show connection lines to original positions")
+    parser.add_argument("--match-index", type=int, default=0, help="Index of the match to visualize when using 'best' mode")
     
     args = parser.parse_args()
     
@@ -708,8 +747,11 @@ def main():
     if not query:
         query = input("\n🔍 Enter your search query: ")
     
+    # Get match index
+    match_index = args.match_index
+    
     # Run the locator
-    locator.run(query)
+    locator.run(query, match_index)
 
 if __name__ == "__main__":
     main()

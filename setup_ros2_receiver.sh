@@ -405,6 +405,135 @@ guide_setup() {
     print_success "Setup guide complete! Please follow the steps above."
 }
 
+# Function to launch RViz for position visualization
+launch_rviz() {
+    print_status "Launching RViz for position visualization..."
+    
+    # Source ROS2
+    source "$ROS2_SETUP"
+    
+    # Source network configuration if available
+    if [ -f "ros_network_setup.sh" ]; then
+        print_status "Sourcing network configuration..."
+        source ./ros_network_setup.sh
+    else
+        print_warning "Network configuration not found! Creating default configuration..."
+        configure_network
+        source ./ros_network_setup.sh
+    fi
+    
+    # Check if RViz is installed
+    if ! command -v rviz2 &> /dev/null; then
+        print_warning "RViz not found. Installing RViz..."
+        sudo apt-get update
+        sudo apt-get install -y ros-humble-rviz2
+        
+        if ! command -v rviz2 &> /dev/null; then
+            print_error "Failed to install RViz. Please install it manually:"
+            print_error "sudo apt install ros-humble-rviz2"
+            return 1
+        fi
+    fi
+    
+    # Check for RViz config file
+    if [ ! -f "goal_pose_rviz_config.rviz" ]; then
+        print_status "Creating RViz configuration file..."
+        cat > goal_pose_rviz_config.rviz << 'EOF'
+Panels:
+  - Class: rviz_common/Displays
+    Help Height: 78
+    Name: Displays
+    Property Tree Widget:
+      Expanded:
+        - /Global Options1
+        - /Status1
+        - /Pose1
+      Splitter Ratio: 0.5
+    Tree Height: 555
+  - Class: rviz_common/Selection
+    Name: Selection
+  - Class: rviz_common/Tool Properties
+    Expanded:
+      - /2D Goal Pose1
+      - /Publish Point1
+    Name: Tool Properties
+    Splitter Ratio: 0.5886790156364441
+  - Class: rviz_common/Views
+    Expanded:
+      - /Current View1
+    Name: Views
+    Splitter Ratio: 0.5
+  - Class: rviz_common/Time
+    Experimental: false
+    Name: Time
+    SyncMode: 0
+    SyncSource: ""
+Visualization Manager:
+  Class: ""
+  Displays:
+    - Alpha: 0.5
+      Cell Size: 1
+      Class: rviz_default_plugins/Grid
+      Color: 160; 160; 164
+      Enabled: true
+      Line Style:
+        Line Width: 0.029999999329447746
+        Value: Lines
+      Name: Grid
+      Normal Cell Count: 0
+      Offset:
+        X: 0
+        Y: 0
+        Z: 0
+      Plane: XY
+      Plane Cell Count: 10
+      Reference Frame: <Fixed Frame>
+      Value: true
+    - Alpha: 1
+      Axes Length: 1
+      Axes Radius: 0.10000000149011612
+      Class: rviz_default_plugins/Pose
+      Color: 255; 25; 0
+      Enabled: true
+      Head Length: 0.30000001192092896
+      Head Radius: 0.10000000149011612
+      Name: Pose
+      Shaft Length: 1
+      Shaft Radius: 0.05000000074505806
+      Shape: Arrow
+      Topic:
+        Depth: 5
+        Durability Policy: Volatile
+        Filter size: 10
+        History Policy: Keep Last
+        Reliability Policy: Reliable
+        Value: /goal_pose
+      Value: true
+  Enabled: true
+  Global Options:
+    Background Color: 48; 48; 48
+    Fixed Frame: map
+    Frame Rate: 30
+  Name: root
+EOF
+        print_success "RViz configuration created"
+    fi
+    
+    # Launch RViz in a new terminal
+    print_status "Starting RViz..."
+    gnome-terminal -- bash -c "
+        echo 'Starting RViz for goal_pose visualization...';
+        source $ROS2_SETUP;
+        source ./ros_network_setup.sh;
+        rviz2 -d ./goal_pose_rviz_config.rviz;
+        read -p 'Press Enter to close this terminal...'
+    " || {
+        # Fallback if gnome-terminal fails
+        print_status "Launching RViz in current terminal..."
+        rviz2 -d ./goal_pose_rviz_config.rviz
+    }
+}
+
 # Function to prepare ROS2 environment
 prepare_ros2_env() {
     print_status "Preparing ROS2 environment..."
@@ -435,6 +564,7 @@ show_menu() {
     echo "4. Prepare ROS2 Environment"
     echo "5. Start Position Receiver"
     echo "6. Guided setup (steps 1-3)"
+    echo "7. Launch RViz visualization"
     echo "0. Exit"
     echo "=========================================="
     echo -n "Enter your choice: "
@@ -466,8 +596,11 @@ main() {
             "guide")
                 guide_setup
                 ;;
+            "rviz")
+                launch_rviz
+                ;;
             *)
-                echo "Usage: $0 {check|network|install|prepare|receiver|guide}"
+                echo "Usage: $0 {check|network|install|prepare|receiver|guide|rviz}"
                 ;;
         esac
         return
@@ -501,6 +634,9 @@ main() {
                 ;;
             6)
                 guide_setup
+                ;;
+            7)
+                launch_rviz
                 ;;
             0)
                 print_status "Exiting..."
