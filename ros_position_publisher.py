@@ -58,13 +58,14 @@ class ROSPositionPublisher:
         
         return True
     
-    def find_and_publish_object(self, query, visualize=True):
+    def find_and_publish_object(self, query, visualize=True, match_index=0):
         """
         Find the best matching object, publish its position, and optionally visualize it
         
         Args:
             query: Text query to search for
             visualize: Whether to visualize the object in 3D (default: True)
+            match_index: Index of the match to use (default: 0 for best match)
         """
         print(f"\n🔍 Searching for object: '{query}'")
         
@@ -130,17 +131,22 @@ class ROSPositionPublisher:
             print("❌ No matching objects found")
             return False
         
-        # Get the best match
-        best_match = locator.all_matches[0]
-        
-        print(f"\n✅ Best match found:")
-        print(f"   Node ID: {best_match['node_id']}")
-        print(f"   Type: {best_match['type']}")
-        print(f"   Similarity: {best_match['similarity']:.4f}")
-        print(f"   Original Position: {best_match['position']}")
+        # Get the match based on the specified index
+        if match_index < len(locator.all_matches):
+            selected_match = locator.all_matches[match_index]
+            match_type = "Selected" if match_index > 0 else "Best"
+            
+            print(f"\n✅ {match_type} match found (index {match_index}):")
+            print(f"   Node ID: {selected_match['node_id']}")
+            print(f"   Type: {selected_match['type']}")
+            print(f"   Similarity: {selected_match['similarity']:.4f}")
+            print(f"   Original Position: {selected_match['position']}")
+        else:
+            print(f"❌ Match index {match_index} is out of range. Only {len(locator.all_matches)} matches found.")
+            return False
         
         # Extract position
-        pos = best_match['position']
+        pos = selected_match['position']
         
         # Publish the position
         success = self.publish_position(pos[0], pos[1], pos[2])
@@ -150,9 +156,9 @@ class ROSPositionPublisher:
         
         # Visualize the best match if requested
         if visualize:
-            print("\n🌟 Starting visualization of best match...")
+            print("\n🌟 Starting visualization of selected match...")
             # Use the visualize_best_match method to show the object in 3D
-            locator.visualize_best_match()
+            locator.visualize_best_match(match_index)
         
         return success
 
@@ -165,6 +171,7 @@ def main():
         # Get query from command line arguments or prompt
         visualize = True  # Default to visualize
         query = ""
+        match_index = 0  # Default to best match (index 0)
         
         # Parse command line arguments
         if len(sys.argv) > 1:
@@ -173,6 +180,21 @@ def main():
                 visualize = False
                 # Remove the flag from arguments
                 sys.argv.remove("--no-viz")
+            
+            # Check for --match-index flag
+            match_index_flag = "--match-index"
+            if match_index_flag in sys.argv:
+                idx = sys.argv.index(match_index_flag)
+                if idx + 1 < len(sys.argv):
+                    try:
+                        match_index = int(sys.argv[idx + 1])
+                        # Remove the flag and its value from arguments
+                        sys.argv.pop(idx)  # Remove flag
+                        sys.argv.pop(idx)  # Remove value
+                    except ValueError:
+                        print(f"⚠️ Invalid match index: {sys.argv[idx + 1]}. Using default (0).")
+                else:
+                    print(f"⚠️ No value provided for {match_index_flag}. Using default (0).")
             
             # The rest is the query
             if len(sys.argv) > 1:
@@ -183,13 +205,20 @@ def main():
             query = input("🔍 Enter search query for object: ")
             viz_choice = input("🖼️ Visualize object? (Y/n): ").lower()
             visualize = viz_choice != "n"
+            
+            try:
+                match_idx_input = input("🔢 Match index to use (default: 0 for best match): ")
+                if match_idx_input.strip():
+                    match_index = int(match_idx_input)
+            except ValueError:
+                print(f"⚠️ Invalid match index. Using default (0).")
         
         if not query.strip():
             print("❌ No query provided")
             return
         
         # Find object, publish position, and visualize if requested
-        success = publisher.find_and_publish_object(query.strip(), visualize)
+        success = publisher.find_and_publish_object(query.strip(), visualize, match_index)
         
         if success:
             print("\n🚀 Position sent to robot successfully!")

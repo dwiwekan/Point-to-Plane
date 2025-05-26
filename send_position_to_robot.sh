@@ -272,8 +272,12 @@ detect_python_env() {
 publish_position() {
     local query="$1"
     local visualize="$2"
+    local match_index="$3"
     
     print_status "Publishing position for query: '$query'"
+    if [ -n "$match_index" ]; then
+        print_status "Using match index: $match_index"
+    fi
     
     # Check if network settings are configured
     if [ -f "ros1_network_setup.sh" ]; then
@@ -346,17 +350,24 @@ publish_position() {
         print_status "Visualization enabled - will load mesh and display result"
     fi
     
+    # Determine match index flag
+    local match_idx_flag=""
+    if [ -n "$match_index" ]; then
+        match_idx_flag="--match-index $match_index"
+        print_status "Using match index: $match_index"
+    fi
+    
     start_time=$(date +%s.%N)
     
     if [ -z "$PYTHON_ENV_PATH" ]; then
         # Using current environment
-        python3 ros_position_publisher.py $viz_flag "$query"
+        python3 ros_position_publisher.py $viz_flag $match_idx_flag "$query"
     elif [ "$USE_CONDA" = true ]; then
         # Using conda environment
-        conda run -n "$PYTHON_ENV_PATH" python3 ros_position_publisher.py $viz_flag "$query"
+        conda run -n "$PYTHON_ENV_PATH" python3 ros_position_publisher.py $viz_flag $match_idx_flag "$query"
     else
         # Using virtual environment
-        (source "$PYTHON_ENV_PATH" && python3 ros_position_publisher.py $viz_flag "$query")
+        (source "$PYTHON_ENV_PATH" && python3 ros_position_publisher.py $viz_flag $match_idx_flag "$query")
     fi
     
     end_time=$(date +%s.%N)
@@ -632,6 +643,7 @@ main() {
             "publish")
                 local visualize=false  # Default to NO visualization to save time
                 local query=""
+                local match_index=""
                 
                 # Check for visualization flags
                 if [[ "$*" == *"--visualize"* ]]; then
@@ -646,16 +658,28 @@ main() {
                     set -- "${@/--no-viz/}"
                 fi
                 
+                # Check for match index flag
+                if [[ "$*" == *"--match-index"* ]]; then
+                    # Extract the match index value
+                    local match_idx_pattern="--match-index ([0-9]+)"
+                    if [[ "$*" =~ $match_idx_pattern ]]; then
+                        match_index="${BASH_REMATCH[1]}"
+                        # Remove --match-index and its value from arguments
+                        set -- "${@/--match-index $match_index/}"
+                    fi
+                fi
+                
                 if [ $# -ge 2 ]; then
                     # Get all arguments from 2nd onward as the query
                     shift
                     query="$*"
-                    publish_position "$query" "$visualize"
+                    publish_position "$query" "$visualize" "$match_index"
                 else
                     print_error "Please provide a search query"
-                    echo "Usage: $0 publish [--visualize | --no-viz] <search_query>"
-                    echo "  --visualize   Enable 3D visualization (loads mesh, may take longer)"
-                    echo "  --no-viz      Disable visualization (faster, default)"
+                    echo "Usage: $0 publish [--visualize | --no-viz] [--match-index INDEX] <search_query>"
+                    echo "  --visualize       Enable 3D visualization (loads mesh, may take longer)"
+                    echo "  --no-viz          Disable visualization (faster, default)"
+                    echo "  --match-index N   Use Nth match instead of the best match (default: 0)"
                 fi
                 ;;
             "monitor")
@@ -680,14 +704,16 @@ main() {
                 detect_python_env
                 ;;
             *)
-                echo "Usage: $0 {network|start-bridge|publish [--visualize|--no-viz] <query>|monitor|test|custom|status|check|env-setup|stop}"
+                echo "Usage: $0 {network|start-bridge|publish [--visualize|--no-viz] [--match-index INDEX] <query>|monitor|test|custom|status|check|env-setup|stop}"
                 echo "Examples:"
-                echo "  $0 publish chair                 # Find a chair and send position (no visualization)"
-                echo "  $0 publish --visualize chair     # Find a chair, send position and visualize in 3D"
-                echo "  $0 publish --no-viz chair        # Find a chair and send position without visualization"
-                echo "  $0 start-bridge                  # Start the ROS Bridge"
-                echo "  $0 env-setup                     # Setup Python environment"
-                echo "  $0 test                          # Send a test position"
+                echo "  $0 publish chair                         # Find a chair and send position (no visualization)"
+                echo "  $0 publish --visualize chair             # Find a chair, send position and visualize in 3D"
+                echo "  $0 publish --no-viz chair                # Find a chair and send position without visualization"
+                echo "  $0 publish --match-index 1 chair         # Use the 2nd best match instead of the best match"
+                echo "  $0 publish --visualize --match-index 2 chair  # Use the 3rd best match and visualize it"
+                echo "  $0 start-bridge                          # Start the ROS Bridge"
+                echo "  $0 env-setup                             # Setup Python environment"
+                echo "  $0 test                                  # Send a test position"
                 echo "  $0 monitor                       # Monitor the goal position topic"
                 echo "  $0 custom                        # Send custom coordinates"
                 ;;
@@ -715,10 +741,13 @@ main() {
                     echo -n "Show visualization? (y/N): "
                     read viz_choice
                     
+                    echo -n "Use a specific match index? (default: 0 for best match): "
+                    read match_idx_choice
+                    
                     if [[ "$viz_choice" == "y" || "$viz_choice" == "Y" ]]; then
-                        publish_position "$query" "true"
+                        publish_position "$query" "true" "$match_idx_choice"
                     else
-                        publish_position "$query" "false"
+                        publish_position "$query" "false" "$match_idx_choice"
                     fi
                 else
                     print_error "No query provided"
